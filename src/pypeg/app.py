@@ -304,8 +304,14 @@ class PypegApp(App):
     """Main application."""
 
     BINDINGS = [
-        Binding("q", "quit", "Quit"),
+        Binding("q", "action_quit", "Quit"),
     ]
+
+    SCREENS = {
+        "directory_selection": DirectorySelectionScreen,
+        "conversion": ConversionScreen,
+        "summary": SummaryScreen,
+    }
 
     CSS = """
     Screen {
@@ -373,7 +379,4 @@ class PypegApp(App):
 
     def on_mount(self):
         """Setup initial screen."""
-        self.install_screen(DirectorySelectionScreen(), name="directory_selection")
-        self.install_screen(ConversionScreen(), name="conversion")
-        self.install_screen(SummaryScreen(), name="summary")
         self.switch_screen("directory_selection")
