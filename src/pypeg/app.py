@@ -378,5 +378,5 @@ class PypegApp(App):
     TITLE = "PYPEG - Batch AVI to MP4 Converter"
 
     def on_mount(self):
-        """Setup initial screen."""
-        self.switch_screen("directory_selection")
+        """Setup on mount - screen is automatically loaded."""
+        pass
