@@ -1,5 +1,6 @@
 from textual.app import App, ComposeResult, on
-from textual.widgets import Header, Footer, Static, Button, Input, Label
+from textual.widgets import Header, Footer, Static, Button, Label, OptionList
+from textual.widgets.option_list import Option
 from textual.containers import Container, Vertical, Horizontal, ScrollableContainer
 from textual.screen import Screen
 from textual.binding import Binding
@@ -21,6 +22,7 @@ from pypeg.utils import (
     create_output_directory,
     validate_paths,
     get_output_filename,
+    get_available_locations,
 )
 
 
@@ -31,57 +33,121 @@ class DirectorySelectionScreen(Screen):
         Binding("ctrl+q", "app.quit", "Quit"),
     ]
 
+    def __init__(self):
+        super().__init__()
+        self.source_dir = ""
+        self.target_dir = ""
+        self.selecting_source = True
+
     def compose(self) -> ComposeResult:
         yield Header()
         yield Vertical(
             Label("[bold]PYPEG - Batch AVI to MP4 Converter[/bold]"),
             Static(""),
-            Label("Source Directory (AVI files):"),
-            Input(id="source_input", placeholder="/path/to/avi/files"),
-            Label("Target Directory (for MP4 files):"),
-            Input(id="target_input", placeholder="/path/to/output"),
+            Label(id="selection_title"),
+            OptionList(id="location_list"),
+            Static(""),
+            Label(id="selected_path"),
             Static(""),
             Horizontal(
-                Button("Start Conversion", id="start_btn", variant="primary"),
-                Button("Quit", id="quit_btn", variant="error"),
+                Button("Confirm", id="confirm_btn", variant="primary"),
+                Button("Cancel", id="cancel_btn", variant="error"),
             ),
         )
         yield Footer()
 
     def on_mount(self):
-        self.query_one("#source_input", Input).focus()
+        self._update_location_list()
 
-    @on(Button.Pressed, "#start_btn")
-    async def on_start(self):
-        """Start conversion with selected directories."""
-        source_input = self.query_one("#source_input", Input)
-        target_input = self.query_one("#target_input", Input)
+    def _update_location_list(self):
+        """Update the location list based on current selection mode."""
+        title = self.query_one("#selection_title", Label)
+        option_list = self.query_one("#location_list", OptionList)
+        selected_path = self.query_one("#selected_path", Label)
 
-        source_dir = source_input.value.strip()
-        target_dir = target_input.value.strip()
+        if self.selecting_source:
+            title.update("[cyan]Select Source Directory (AVI files):[/cyan]")
+        else:
+            title.update("[cyan]Select Target Directory (MP4 output):[/cyan]")
 
-        if not source_dir or not target_dir:
-            self.app.notify("Please enter both directories", severity="error")
+        # Get available locations
+        locations = get_available_locations()
+
+        # Populate option list
+        option_list.clear_options()
+        for label, path in locations.items():
+            if label.startswith("─"):  # Separator
+                option_list.add_option(Option(label, id=""))
+            else:
+                option_list.add_option(Option(label, id=path))
+
+        # Show current selection
+        if self.selecting_source and self.source_dir:
+            selected_path.update(f"[green]Selected:[/green] {self.source_dir}")
+        elif not self.selecting_source and self.target_dir:
+            selected_path.update(f"[green]Selected:[/green] {self.target_dir}")
+        else:
+            selected_path.update("[yellow]No selection yet[/yellow]")
+
+    @on(OptionList.OptionSelected)
+    def on_option_selected(self, event: OptionList.OptionSelected):
+        """Handle directory selection."""
+        if not event.option.id:  # Skip separators
             return
 
-        valid, error = validate_paths(source_dir, target_dir)
-        if not valid:
-            self.app.notify(error, severity="error")
-            return
+        selected_path = self.query_one("#selected_path", Label)
 
-        avi_files = find_avi_files(source_dir)
-        if not avi_files:
-            self.app.notify("No .avi files found", severity="error")
-            return
+        if self.selecting_source:
+            self.source_dir = event.option.id
+            selected_path.update(f"[green]Source selected:[/green] {self.source_dir}")
+        else:
+            self.target_dir = event.option.id
+            selected_path.update(f"[green]Target selected:[/green] {self.target_dir}")
 
-        self.app.source_dir = source_dir
-        self.app.target_dir = target_dir
-        self.app.avi_files = avi_files
-        self.app.switch_screen("conversion")
+    @on(Button.Pressed, "#confirm_btn")
+    async def on_confirm(self):
+        """Confirm selection and move to next step."""
+        if self.selecting_source:
+            if not self.source_dir:
+                self.app.notify("Please select a source directory", severity="error")
+                return
 
-    @on(Button.Pressed, "#quit_btn")
-    def on_quit(self):
-        self.app.exit()
+            # Check if directory has AVI files
+            avi_files = find_avi_files(self.source_dir)
+            if not avi_files:
+                self.app.notify("No .avi files found in selected directory", severity="error")
+                return
+
+            # Move to target directory selection
+            self.selecting_source = False
+            self._update_location_list()
+        else:
+            if not self.target_dir:
+                self.app.notify("Please select a target directory", severity="error")
+                return
+
+            # Validate paths
+            valid, error = validate_paths(self.source_dir, self.target_dir)
+            if not valid:
+                self.app.notify(error, severity="error")
+                return
+
+            # Get AVI files and proceed
+            avi_files = find_avi_files(self.source_dir)
+            self.app.source_dir = self.source_dir
+            self.app.target_dir = self.target_dir
+            self.app.avi_files = avi_files
+            self.app.push_screen("conversion")
+
+    @on(Button.Pressed, "#cancel_btn")
+    def on_cancel(self):
+        """Cancel and reset selection."""
+        if self.selecting_source:
+            self.app.exit()
+        else:
+            self.selecting_source = True
+            self.source_dir = ""
+            self._update_location_list()
 
 
 class ConversionScreen(Screen):
@@ -199,7 +265,7 @@ class ConversionScreen(Screen):
             "errors": errors,
         }
         self.worker.shutdown()
-        self.app.switch_screen("summary")
+        self.app.push_screen("summary")
 
     @on(Button.Pressed, "#pause_btn")
     def toggle_pause(self):
@@ -215,7 +281,7 @@ class ConversionScreen(Screen):
             for avi_file in list(self.worker.tasks.keys()):
                 self.worker.cancel_task(avi_file)
             self.worker.shutdown()
-        self.app.switch_screen("directory_selection")
+        self.app.push_screen("directory_selection")
 
 
 class SummaryScreen(Screen):
@@ -245,7 +311,7 @@ class SummaryScreen(Screen):
 
     @on(Button.Pressed, "#new_btn")
     def on_new(self):
-        self.app.switch_screen("directory_selection")
+        self.app.push_screen("directory_selection")
 
     @on(Button.Pressed, "#quit_btn")
     def on_quit(self):
@@ -268,13 +334,14 @@ class PypegApp(App):
         margin: 1;
     }
 
-    Input {
-        margin: 0 1 1 1;
-        width: 60;
-    }
-
     Button {
         margin: 1;
+    }
+
+    OptionList {
+        margin: 0 1;
+        width: 70;
+        height: auto;
     }
 
     #video_list {
@@ -291,5 +358,4 @@ class PypegApp(App):
         self.install_screen(DirectorySelectionScreen(), name="directory_selection")
         self.install_screen(ConversionScreen(), name="conversion")
         self.install_screen(SummaryScreen(), name="summary")
-        # Push the first screen instead of switching
         self.push_screen("directory_selection")
