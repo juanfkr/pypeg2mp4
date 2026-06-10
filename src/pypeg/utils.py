@@ -67,6 +67,27 @@ def find_home_directories() -> Dict[str, str]:
     return home_dirs
 
 
+def get_subdirectories(path: str) -> Dict[str, str]:
+    """Get subdirectories within a given path."""
+    dirs = {}
+
+    # Add parent directory option
+    parent = Path(path).parent
+    if parent != Path(path):  # Not root
+        dirs["⬆️ .."] = str(parent)
+
+    try:
+        path_obj = Path(path)
+        if path_obj.exists() and path_obj.is_dir():
+            for item in sorted(path_obj.iterdir()):
+                if item.is_dir() and os.access(item, os.R_OK):
+                    dirs[f"📁 {item.name}"] = str(item)
+    except PermissionError:
+        pass
+
+    return dirs
+
+
 def get_available_locations() -> Dict[str, str]:
     """Get all available media locations (USB + home directories)."""
     locations = {}

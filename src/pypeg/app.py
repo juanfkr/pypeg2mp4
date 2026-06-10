@@ -23,6 +23,7 @@ from pypeg.utils import (
     validate_paths,
     get_output_filename,
     get_available_locations,
+    get_subdirectories,
 )
 
 
@@ -38,6 +39,7 @@ class DirectorySelectionScreen(Screen):
         self.source_dir = ""
         self.target_dir = ""
         self.selecting_source = True
+        self.current_path = None  # Current navigation path
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -45,12 +47,13 @@ class DirectorySelectionScreen(Screen):
             Label("[bold]PYPEG - Batch AVI to MP4 Converter[/bold]"),
             Static(""),
             Label(id="selection_title"),
+            Label(id="current_location"),
             OptionList(id="location_list"),
             Static(""),
             Label(id="selected_path"),
             Static(""),
             Horizontal(
-                Button("Confirm", id="confirm_btn", variant="primary"),
+                Button("Select This", id="select_btn", variant="primary"),
                 Button("Cancel", id="cancel_btn", variant="error"),
             ),
         )
@@ -62,6 +65,7 @@ class DirectorySelectionScreen(Screen):
     def _update_location_list(self):
         """Update the location list based on current selection mode."""
         title = self.query_one("#selection_title", Label)
+        location_display = self.query_one("#current_location", Label)
         option_list = self.query_one("#location_list", OptionList)
         selected_path = self.query_one("#selected_path", Label)
 
@@ -70,8 +74,15 @@ class DirectorySelectionScreen(Screen):
         else:
             title.update("[cyan]Select Target Directory (MP4 output):[/cyan]")
 
-        # Get available locations
-        locations = get_available_locations()
+        # Determine what locations to show
+        if self.current_path is None:
+            # Show main locations
+            locations = get_available_locations()
+            location_display.update("[yellow]Choose a starting location[/yellow]")
+        else:
+            # Show subdirectories of current path
+            locations = get_subdirectories(self.current_path)
+            location_display.update(f"[cyan]📂 {self.current_path}[/cyan]")
 
         # Populate option list
         option_list.clear_options()
@@ -91,43 +102,52 @@ class DirectorySelectionScreen(Screen):
 
     @on(OptionList.OptionSelected)
     def on_option_selected(self, event: OptionList.OptionSelected):
-        """Handle directory selection."""
+        """Handle directory selection or navigation."""
         if not event.option.id:  # Skip separators
             return
 
-        selected_path = self.query_one("#selected_path", Label)
+        path = event.option.id
+        label = event.option.prompt
 
-        if self.selecting_source:
-            self.source_dir = event.option.id
-            selected_path.update(f"[green]Source selected:[/green] {self.source_dir}")
+        # Check if this is a directory to navigate into or a parent directory
+        if label.startswith("📁 ") or label == "⬆️ ..":
+            # Navigate into this directory
+            self.current_path = path
+            self._update_location_list()
         else:
-            self.target_dir = event.option.id
-            selected_path.update(f"[green]Target selected:[/green] {self.target_dir}")
+            # This is a location from the main menu, navigate into it
+            self.current_path = path
+            self._update_location_list()
 
-    @on(Button.Pressed, "#confirm_btn")
+    @on(Button.Pressed, "#select_btn")
     async def on_confirm(self):
         """Confirm selection and move to next step."""
+        # Get the currently browsed directory
+        browsed_dir = self.current_path if self.current_path else None
+
         if self.selecting_source:
-            if not self.source_dir:
+            if not browsed_dir:
                 self.app.notify("Please select a source directory", severity="error")
                 return
 
             # Check if directory has AVI files
-            avi_files = find_avi_files(self.source_dir)
+            avi_files = find_avi_files(browsed_dir)
             if not avi_files:
                 self.app.notify("No .avi files found in selected directory", severity="error")
                 return
 
-            # Move to target directory selection
+            # Store source directory and move to target selection
+            self.source_dir = browsed_dir
             self.selecting_source = False
+            self.current_path = None  # Reset navigation for target selection
             self._update_location_list()
         else:
-            if not self.target_dir:
+            if not browsed_dir:
                 self.app.notify("Please select a target directory", severity="error")
                 return
 
             # Validate paths
-            valid, error = validate_paths(self.source_dir, self.target_dir)
+            valid, error = validate_paths(self.source_dir, browsed_dir)
             if not valid:
                 self.app.notify(error, severity="error")
                 return
@@ -135,7 +155,7 @@ class DirectorySelectionScreen(Screen):
             # Get AVI files and proceed
             avi_files = find_avi_files(self.source_dir)
             self.app.source_dir = self.source_dir
-            self.app.target_dir = self.target_dir
+            self.app.target_dir = browsed_dir
             self.app.avi_files = avi_files
             self.app.push_screen("conversion")
 
@@ -143,10 +163,18 @@ class DirectorySelectionScreen(Screen):
     def on_cancel(self):
         """Cancel and reset selection."""
         if self.selecting_source:
-            self.app.exit()
+            if self.current_path is None:
+                # Exit the app if we're at the root selection
+                self.app.exit()
+            else:
+                # Go back to main locations
+                self.current_path = None
+                self._update_location_list()
         else:
+            # Go back to source directory selection
             self.selecting_source = True
             self.source_dir = ""
+            self.current_path = None
             self._update_location_list()
 
 
