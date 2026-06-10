@@ -1,0 +1,9 @@
+
+[project]
+name = "pypeg"
+version = "0.1.0"
+description = "Batch AVI to MP4 converter with TUI and parallelization"
+dependencies = ["textual", "psutil", "ffmpeg-python"]
+
+[project.scripts]
+pypeg = "pypeg.main:main"
