@@ -6,13 +6,21 @@ from datetime import timedelta
 
 
 def find_avi_files(directory: str, recursive: bool = True) -> List[str]:
-    """Find all .avi files in directory."""
+    """Find all .avi files in directory (case-insensitive)."""
     path = Path(directory)
     if not path.exists() or not path.is_dir():
         return []
 
-    pattern = "**/*.avi" if recursive else "*.avi"
-    return sorted([str(f) for f in path.glob(pattern)])
+    files = []
+    pattern = "**/*" if recursive else "*"
+
+    for file_path in path.glob(pattern):
+        if file_path.is_file():
+            # Check both lowercase and uppercase extensions
+            if file_path.suffix.lower() == ".avi":
+                files.append(str(file_path))
+
+    return sorted(files)
 
 
 def find_usb_devices() -> Dict[str, str]:
