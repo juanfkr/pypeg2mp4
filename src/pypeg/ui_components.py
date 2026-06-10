@@ -10,8 +10,8 @@ class CPULoadWidget(Static):
 
     cpu_load = reactive(0.0)
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
         self.update_cpu()
 
     def render(self) -> str:
@@ -28,8 +28,8 @@ class CPULoadWidget(Static):
 class MetricsWidget(Static):
     """Display conversion metrics."""
 
-    def __init__(self, metrics_dict: dict):
-        super().__init__()
+    def __init__(self, metrics_dict: dict, **kwargs):
+        super().__init__(**kwargs)
         self.metrics_dict = metrics_dict
 
     def render(self) -> str:
@@ -51,8 +51,8 @@ class VideoProgressWidget(Static):
 
     progress = reactive(0.0)
 
-    def __init__(self, filename: str, eta: float = 0):
-        super().__init__()
+    def __init__(self, filename: str, eta: float = 0, **kwargs):
+        super().__init__(**kwargs)
         self.filename = filename
         self.eta = eta
 
@@ -77,8 +77,8 @@ class VideoProgressWidget(Static):
 class StatusMessageWidget(Static):
     """Display status messages."""
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
         self.message = ""
 
     def set_message(self, message: str):
